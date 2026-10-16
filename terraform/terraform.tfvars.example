@@ -1,0 +1,9 @@
+resource_group_name  = "rg-devsecops-compliance-prod"
+location             = "eastus"
+environment          = "prod"
+storage_account_name = "stdevsecopscompprod01"
+tags = {
+  Project     = "DevSecOps-Compliance-Pipeline"
+  Environment = "Production"
+  ManagedBy   = "Terraform"
+}

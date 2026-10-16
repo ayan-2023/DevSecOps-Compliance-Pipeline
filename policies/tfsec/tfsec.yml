@@ -1,0 +1,14 @@
+---
+# TFSec Configuration File
+# Controls scanning behavior, rule exclusions, and minimum severity thresholds
+
+minimum_severity: MEDIUM
+exclude:
+  # Example: exclude specific low-risk rules if justified by organizational policy
+  # - azure-storage-default-action-deny
+
+severity_overrides:
+  azure-storage-queue-services-logging-enabled: LOW
+  azure-keyvault-specify-network-acl: HIGH
+
+custom_checks: []

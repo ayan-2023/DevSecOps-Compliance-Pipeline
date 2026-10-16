@@ -1,0 +1,37 @@
+name: GitHub IaC Security & Semgrep Audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1' # Weekly Monday security audit
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  semgrep-scan:
+    name: Semgrep Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: |
+          docker run --rm -v "${PWD}:/src" returntocorp/semgrep semgrep scan --config=/src/policies/semgrep/semgrep.yml /src/terraform
+
+  checkov-audit:
+    name: Checkov Compliance Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov Action
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          framework: terraform
+          directory: terraform
+          output_format: cli
+          soft_fail: true

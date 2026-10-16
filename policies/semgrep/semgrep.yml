@@ -1,0 +1,22 @@
+rules:
+  - id: terraform-hardcoded-secret
+    languages: [terraform]
+    message: "Hardcoded secret detected in Terraform configuration. Use Azure Key Vault or pipeline variables instead."
+    severity: ERROR
+    patterns:
+      - pattern-either:
+          - pattern: password = "..."
+          - pattern: secret = "..."
+          - pattern: client_secret = "..."
+          - pattern: admin_password = "..."
+      - pattern-not: password = var.$_
+      - pattern-not: secret = var.$_
+      - pattern-not: client_secret = var.$_
+      - pattern-not: admin_password = var.$_
+
+  - id: terraform-insecure-http
+    languages: [terraform]
+    message: "Insecure HTTP protocol detected. Ensure HTTPS or TLS >= 1.2 is enforced."
+    severity: WARNING
+    patterns:
+      - pattern: enable_https_traffic_only = false

@@ -1,0 +1,49 @@
+# Compiled files and local state
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfplan
+*.tfvars
+!terraform.tfvars.example
+
+# Terraform Directories
+.terraform/
+.terraform.lock.hcl
+
+# Crash log files
+crash.log
+crash.*.log
+
+# CLI configuration files
+.terraformrc
+terraform.rc
+
+# Security scan output reports (keep directory structure via .gitkeep)
+reports/checkov/*
+!reports/checkov/.gitkeep
+reports/gitleaks/*
+!reports/gitleaks/.gitkeep
+reports/semgrep/*
+!reports/semgrep/.gitkeep
+reports/terraform-plan/*
+!reports/terraform-plan/.gitkeep
+reports/tflint/*
+!reports/tflint/.gitkeep
+reports/tfsec/*
+!reports/tfsec/.gitkeep
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Secrets & Environment
+*.env
+*.pem
+*.key

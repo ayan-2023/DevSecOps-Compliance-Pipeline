@@ -1,0 +1,55 @@
+flowchart TD
+    subgraph Trigger ["Trigger & Inputs"]
+        A[Git Push / PR to main or feature/*] --> B[Pipeline Execution Parameters]
+        B --> B1["Tflint: bool"]
+        B --> B2["TFsec: bool"]
+        B --> B3["Checkov: bool"]
+        B --> B4["Trivy: bool"]
+        B --> B5["Gitleaks: bool"]
+        B --> B6["terraformValidate: bool"]
+        B --> B7["terraformPlan: bool"]
+        B --> B8["terraformApply: bool"]
+    end
+
+    subgraph SecurityStages ["Security & Compliance Stages (External Templates: Mausam/company-pipeline-templates)"]
+        direction TB
+        B1 -.->|Enabled| S1["Stage: Tflint<br/>templates/Tflint-scan.yml@secureTemplates"]
+        B2 -.->|Enabled| S2["Stage: TFsec<br/>templates/Tfsec-scan.yml@secureTemplates"]
+        B3 -.->|Enabled| S3["Stage: Checkov<br/>templates/Checkov-scan.yml@secureTemplates"]
+        B4 -.->|Enabled| S4["Stage: Trivy<br/>templates/Trivy-scan.yml@secureTemplates"]
+        B5 -.->|Enabled| S5["Stage: Gitleaks<br/>templates/Gitleaks-scan.yml@secureTemplates"]
+    end
+
+    subgraph ValidationStage ["Terraform Validation Stage"]
+        S1 & S2 & S3 & S4 & S5 -->|Dynamic dependsOn: Succeeded| V1["Stage: terraformInit<br/>(Pool: Mausam agent)"]
+        V1 --> V2["TerraformTask@5: Init (Azure Backend)"]
+        V2 --> V3["TerraformTask@5: Validate"]
+    end
+
+    subgraph PlanStage ["Terraform Plan & Artifact Generation"]
+        V3 -->|dependsOn: terraformInit| P1["Stage: terraformPlan<br/>(Pool: Mausam agent)"]
+        P1 --> P2["TerraformTask@5: Init"]
+        P2 --> P3["TerraformTask@5: Plan (-out=tfplan)"]
+        P3 --> P4["PublishPipelineArtifact@1<br/>Artifact: terraform-plan"]
+    end
+
+    subgraph ApplyStage ["Terraform Apply Stage (Main Branch Only)"]
+        P4 -->|Artifact Available & Branch: main| G1["Job: manualApproval<br/>(Pool: Server)"]
+        G1 --> G2["ManualValidation@1<br/>Notify: ayanjana2026@gmail.com"]
+        G2 -->|Approved| A1["Job: terraformApplyJob<br/>(Pool: Mausam agent)"]
+        G2 -->|Rejected / Timeout| X1["Pipeline Terminated<br/>No Deployment"]
+        A1 --> A2["TerraformTask@5: Init"]
+        A2 --> A3["DownloadPipelineArtifact@2<br/>Artifact: terraform-plan"]
+        A3 --> A4["TerraformTask@5: Apply tfplan"]
+        A4 --> D1["Azure Cloud Infrastructure<br/>Resource Group & Hardened Storage"]
+    end
+
+    classDef stageStyle fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;
+    classDef gateStyle fill:#7c2d12,stroke:#f97316,stroke-width:2px,color:#fff;
+    classDef successStyle fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff;
+    classDef stopStyle fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#fff;
+
+    class S1,S2,S3,S4,S5,V1,P1,A1 stageStyle;
+    class G1,G2 gateStyle;
+    class D1 successStyle;
+    class X1 stopStyle;

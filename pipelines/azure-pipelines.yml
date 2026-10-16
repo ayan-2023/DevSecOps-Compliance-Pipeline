@@ -1,0 +1,280 @@
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+    exclude:
+      - none
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  name: 'Mausam agent'
+
+resources:
+  repositories:
+    - repository: secureTemplates
+      type: git
+      name: Mausam/company-pipeline-templates
+      ref: refs/heads/main
+
+parameters:
+  - name: Tflint
+    displayName: 'Run TFLint Scan'
+    type: boolean
+    default: true
+  - name: TFsec
+    displayName: 'Run TFSec Scan'
+    type: boolean
+    default: true
+  - name: Checkov
+    displayName: 'Run Checkov Scan'
+    type: boolean
+    default: true
+  - name: Trivy
+    displayName: 'Run Trivy Scan'
+    type: boolean
+    default: true
+  - name: Gitleaks
+    displayName: 'Run Gitleaks Scan'
+    type: boolean
+    default: true
+  - name: terraformValidate
+    displayName: 'Run Terraform Validate'
+    type: boolean
+    default: true
+  - name: terraformPlan
+    displayName: 'Run Terraform Plan'
+    type: boolean
+    default: true
+  - name: terraformApply
+    displayName: 'Run Terraform Apply'
+    type: boolean
+    default: true
+
+variables:
+  - group: Mausam-variable-group
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/terraform'
+
+stages:
+  # =========================================================================
+  # SECURITY COMPLIANCE SCANNING STAGES
+  # Each tool runs independently via external templates from secureTemplates
+  # =========================================================================
+
+  - ${{ if eq(parameters.Tflint, true) }}:
+    - stage: Tflint
+      displayName: 'TFLint Scan'
+      jobs:
+        - job: TflintScanJob
+          displayName: 'Execute TFLint Static Analysis'
+          steps:
+            - template: templates/Tflint-scan.yml@secureTemplates
+
+  - ${{ if eq(parameters.TFsec, true) }}:
+    - stage: TFsec
+      displayName: 'TFSec Scan'
+      jobs:
+        - job: TFsecScanJob
+          displayName: 'Execute TFSec Security Scan'
+          steps:
+            - template: templates/Tfsec-scan.yml@secureTemplates
+
+  - ${{ if eq(parameters.Checkov, true) }}:
+    - stage: Checkov
+      displayName: 'Checkov Scan'
+      jobs:
+        - job: CheckovScanJob
+          displayName: 'Execute Checkov IaC Compliance Scan'
+          steps:
+            - template: templates/Checkov-scan.yml@secureTemplates
+
+  - ${{ if eq(parameters.Trivy, true) }}:
+    - stage: Trivy
+      displayName: 'Trivy Scan'
+      jobs:
+        - job: TrivyScanJob
+          displayName: 'Execute Trivy Misconfiguration Scan'
+          steps:
+            - template: templates/Trivy-scan.yml@secureTemplates
+
+  - ${{ if eq(parameters.Gitleaks, true) }}:
+    - stage: Gitleaks
+      displayName: 'Gitleaks Scan'
+      jobs:
+        - job: GitleaksScanJob
+          displayName: 'Execute Gitleaks Secret Scan'
+          steps:
+            - template: templates/Gitleaks-scan.yml@secureTemplates
+
+  # =========================================================================
+  # TERRAFORM INIT & VALIDATE STAGE
+  # Dynamically depends only on active security scan stages
+  # =========================================================================
+  - ${{ if eq(parameters.terraformValidate, true) }}:
+    - stage: terraformInit
+      displayName: 'Terraform Init & Validate'
+      ${{ if or(eq(parameters.Tflint, true), eq(parameters.TFsec, true), eq(parameters.Checkov, true), eq(parameters.Trivy, true), eq(parameters.Gitleaks, true)) }}:
+        dependsOn:
+          ${{ if eq(parameters.Tflint, true) }}:
+            - Tflint
+          ${{ if eq(parameters.TFsec, true) }}:
+            - TFsec
+          ${{ if eq(parameters.Checkov, true) }}:
+            - Checkov
+          ${{ if eq(parameters.Trivy, true) }}:
+            - Trivy
+          ${{ if eq(parameters.Gitleaks, true) }}:
+            - Gitleaks
+      ${{ else }}:
+        dependsOn: []
+      condition: succeeded()
+      jobs:
+        - job: TerraformValidateJob
+          displayName: 'Terraform Init and Validate'
+          steps:
+            - task: TerraformTask@5
+              displayName: 'Terraform Init'
+              inputs:
+                provider: 'azurerm'
+                command: 'init'
+                workingDirectory: '$(workingDirectory)'
+                backendServiceArm: '$(backendServiceArm)'
+                backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+                backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+                backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+                backendAzureRmKey: '$(backendAzureRmKey)'
+
+            - task: TerraformTask@5
+              displayName: 'Terraform Validate'
+              inputs:
+                provider: 'azurerm'
+                command: 'validate'
+                workingDirectory: '$(workingDirectory)'
+
+  # =========================================================================
+  # TERRAFORM PLAN STAGE
+  # Generates and publishes the execution plan artifact
+  # =========================================================================
+  - ${{ if eq(parameters.terraformPlan, true) }}:
+    - stage: terraformPlan
+      displayName: 'Terraform Plan'
+      ${{ if eq(parameters.terraformValidate, true) }}:
+        dependsOn:
+          - terraformInit
+      ${{ elseif or(eq(parameters.Tflint, true), eq(parameters.TFsec, true), eq(parameters.Checkov, true), eq(parameters.Trivy, true), eq(parameters.Gitleaks, true)) }}:
+        dependsOn:
+          ${{ if eq(parameters.Tflint, true) }}:
+            - Tflint
+          ${{ if eq(parameters.TFsec, true) }}:
+            - TFsec
+          ${{ if eq(parameters.Checkov, true) }}:
+            - Checkov
+          ${{ if eq(parameters.Trivy, true) }}:
+            - Trivy
+          ${{ if eq(parameters.Gitleaks, true) }}:
+            - Gitleaks
+      ${{ else }}:
+        dependsOn: []
+      condition: succeeded()
+      jobs:
+        - job: TerraformPlanJob
+          displayName: 'Terraform Plan & Artifact Generation'
+          steps:
+            - task: TerraformTask@5
+              displayName: 'Terraform Init'
+              inputs:
+                provider: 'azurerm'
+                command: 'init'
+                workingDirectory: '$(workingDirectory)'
+                backendServiceArm: '$(backendServiceArm)'
+                backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+                backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+                backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+                backendAzureRmKey: '$(backendAzureRmKey)'
+
+            - task: TerraformTask@5
+              displayName: 'Terraform Plan'
+              inputs:
+                provider: 'azurerm'
+                command: 'plan'
+                workingDirectory: '$(workingDirectory)'
+                environmentServiceNameAzureRM: '$(environmentServiceNameAzureRM)'
+                commandOptions: '-out=$(workingDirectory)/tfplan'
+
+            - task: PublishPipelineArtifact@1
+              displayName: 'Publish Terraform Plan Artifact'
+              inputs:
+                targetPath: '$(workingDirectory)/tfplan'
+                artifact: 'terraform-plan'
+                publishLocation: 'pipeline'
+
+  # =========================================================================
+  # TERRAFORM APPLY STAGE
+  # Manual validation server job + production deployment agent job
+  # =========================================================================
+  - ${{ if eq(parameters.terraformApply, true) }}:
+    - stage: terraformApply
+      displayName: 'Terraform Apply'
+      ${{ if eq(parameters.terraformPlan, true) }}:
+        dependsOn:
+          - terraformPlan
+      ${{ elseif eq(parameters.terraformValidate, true) }}:
+        dependsOn:
+          - terraformInit
+      ${{ else }}:
+        dependsOn: []
+      condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+      jobs:
+        # Job 1: Agentless server job for manual approval
+        - job: manualApproval
+          displayName: 'Manual Approval Gate'
+          pool: server
+          timeoutInMinutes: 1440
+          steps:
+            - task: ManualValidation@1
+              displayName: 'Validate Plan & Approve Production Deployment'
+              inputs:
+                notifyUsers: 'ayanjana2026@gmail.com'
+                instructions: 'Please inspect the terraform-plan artifact and security scan findings before granting production apply authorization.'
+                onTimeout: 'reject'
+
+        # Job 2: Dedicated agent job for applying the exact approved plan
+        - job: terraformApplyJob
+          displayName: 'Execute Terraform Apply'
+          dependsOn: manualApproval
+          condition: succeeded()
+          pool:
+            name: 'Mausam agent'
+          steps:
+            - task: TerraformTask@5
+              displayName: 'Terraform Init'
+              inputs:
+                provider: 'azurerm'
+                command: 'init'
+                workingDirectory: '$(workingDirectory)'
+                backendServiceArm: '$(backendServiceArm)'
+                backendAzureRmResourceGroupName: '$(backendAzureRmResourceGroupName)'
+                backendAzureRmStorageAccountName: '$(backendAzureRmStorageAccountName)'
+                backendAzureRmContainerName: '$(backendAzureRmContainerName)'
+                backendAzureRmKey: '$(backendAzureRmKey)'
+
+            - task: DownloadPipelineArtifact@2
+              displayName: 'Download Terraform Plan Artifact'
+              inputs:
+                buildType: 'current'
+                artifactName: 'terraform-plan'
+                targetPath: '$(Pipeline.Workspace)/terraform-plan'
+
+            - task: TerraformTask@5
+              displayName: 'Terraform Apply Approved Plan'
+              inputs:
+                provider: 'azurerm'
+                command: 'apply'
+                workingDirectory: '$(workingDirectory)'
+                environmentServiceNameAzureRM: '$(environmentServiceNameAzureRM)'
+                commandOptions: '$(Pipeline.Workspace)/terraform-plan/tfplan'

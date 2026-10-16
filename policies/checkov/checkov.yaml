@@ -1,0 +1,18 @@
+---
+# Checkov Policy and Scanner Configuration
+directory:
+  - terraform
+framework:
+  - terraform
+compact: true
+quiet: false
+output:
+  - cli
+  - json
+output-file-path: reports/checkov/checkov-report.json
+# Skip checks that are handled by specialized infrastructure controls if needed
+# skip-check:
+#   - CKV_AZURE_35
+soft-fail: false
+download-external-modules: false
+evaluate-variables: true
